@@ -1,12 +1,4 @@
-/**
- * transferEvents.ts
- *
- * Polls USDC Transfer events over HTTP using getLogs per block.
- * No WebSocket dependency.
- */
-
 import { parseAbiItem, type PublicClient } from 'viem'
-import type { SmartAccountClient } from 'permissionless'
 import { config } from '../config.js'
 import { store } from '../db/store.js'
 import { log } from '../utils/logger.js'
@@ -16,18 +8,14 @@ const TRANSFER_ABI = parseAbiItem(
   'event Transfer(address indexed from, address indexed to, uint256 value)'
 )
 
-export function startTransferListener(
-  publicClient      : PublicClient,
-  smartAccountClient: SmartAccountClient,
-): void {
-  log.info(`Watching USDC transfers @ ${config.usdcAddress} (HTTP polling)`)
+export function startTransferListener(publicClient: PublicClient): void {
+  log.info(`Watching USDC transfers @ ${config.usdcAddress}`)
 
   let lastBlock = 0n
 
   publicClient.watchBlocks({
     onBlock: async (block) => {
-      log.info(`Block received: ${block.number}`)
-      if (block.number <= lastBlock) return
+      if (block.number === null || block.number <= lastBlock) return
       lastBlock = block.number
 
       try {
@@ -37,13 +25,6 @@ export function startTransferListener(
           fromBlock : block.number,
           toBlock   : block.number,
         })
-
-        log.info(`Logs found in block ${block.number}: ${logs.length}`)
-    for (const l of logs) {
-      log.info(`  Transfer from=${l.args.from} value=${l.args.value}`)
-    }
-
-        if (logs.length === 0) return
 
         for (const l of logs) {
           const from  = l.args.from  as `0x${string}` | undefined
@@ -56,10 +37,9 @@ export function startTransferListener(
 
           if (store.isLogProcessed(l.transactionHash!, l.logIndex!)) continue
 
-          log.event(`Spend detected | user=${from} amount=${value}`)
+          log.event(`Spend: ${from} amount=${value}`)
 
           void executeDeposit(
-            smartAccountClient,
             from,
             user.basis_points,
             value,
@@ -68,8 +48,7 @@ export function startTransferListener(
           )
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        log.error(`USDC getLogs failed @ block ${block.number}: ${msg}`)
+        log.error(`transferEvents block ${block.number}: ${err instanceof Error ? err.message : String(err)}`)
       }
     },
     onError: (err) => log.error('watchBlocks[transfer]:', err.message),
