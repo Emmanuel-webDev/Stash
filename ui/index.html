@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stash — Automated Savings on Arc</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+  <!-- ── Navigation ─────────────────────────────────── -->
+  <nav class="nav">
+    <div class="logo">St<em>a</em>sh</div>
+    <div class="nav-right">
+      <div class="chip">
+        <span class="chip-dot"></span>
+        Arc Testnet
+      </div>
+      <div class="wallet-addr" id="walletDisplay" hidden></div>
+      <button class="btn btn-primary" id="connectBtn">Connect Wallet</button>
+      <button class="btn" id="disconnectBtn" hidden>Disconnect</button>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- ── Landing ──────────────────────────────────── -->
+    <section class="landing" id="landing">
+      <p class="eyebrow">Automated Savings · Arc Testnet</p>
+      <h1 class="hero-title">
+        Save <em>automatically</em><br>every time you spend.
+      </h1>
+      <p class="hero-sub">
+        Stash watches your wallet. Every time USDC leaves — a swap,
+        a transfer, anything — a percentage goes straight into your vault.
+        No manual effort.
+      </p>
+      <div class="hero-cta">
+        <button class="btn btn-primary btn-lg" id="connectLanding">Connect Wallet</button>
+      </div>
+      <p class="hero-note">Non-custodial · Withdraw anytime · Arc testnet only</p>
+    </section>
+
+    <!-- ── Dashboard ────────────────────────────────── -->
+    <section class="dashboard" id="dashboard" hidden>
+
+      <!-- Balance Card -->
+      <div class="card" id="balanceCard">
+        <p class="card-label">Vault Balance</p>
+        <div class="balance-row">
+          <div class="balance-amount">
+            <span id="balanceDisplay">0.00</span>
+            <span class="balance-unit">USDC</span>
+          </div>
+          <button class="btn btn-danger" id="withdrawBtn" disabled>Withdraw</button>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat">
+            <p class="stat-label">Saved Rate</p>
+            <p class="stat-value" id="rateDisplay">—</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">Volume Tracked</p>
+            <p class="stat-value" id="volumeDisplay">$0</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">Events Caught</p>
+            <p class="stat-value" id="eventsDisplay">0</p>
+          </div>
+        </div>
+
+        <div class="status-bar" id="statusBar" data-state="inactive">
+          <span class="status-dot"></span>
+          <span id="statusText">Connect wallet to get started.</span>
+        </div>
+      </div>
+
+      <!-- Configuration Card -->
+      <div class="card" id="configCard">
+        <p class="card-label">Savings Rate</p>
+
+        <div class="rate-display">
+          <span id="rateValue">5</span><span class="rate-unit">%</span>
+        </div>
+
+        <input
+          type="range"
+          class="slider"
+          id="rateSlider"
+          min="1"
+          max="20"
+          value="5"
+          aria-label="Savings rate"
+        />
+
+        <div class="presets" role="group" aria-label="Rate presets">
+          <button class="preset" data-value="1">1%</button>
+          <button class="preset" data-value="3">3%</button>
+          <button class="preset preset--active" data-value="5">5%</button>
+          <button class="preset" data-value="10">10%</button>
+          <button class="preset" data-value="20">20%</button>
+        </div>
+
+        <p class="projection" id="projection">
+          Spend $500/month → save <strong>$25.00</strong>
+        </p>
+
+        <div class="config-actions">
+          <button class="btn btn-primary" id="configureBtn">Activate Savings</button>
+          <button class="btn" id="pauseBtn" hidden>Pause Listening</button>
+          <button class="btn" id="resumeBtn" hidden>Resume Listening</button>
+        </div>
+      </div>
+
+      <!-- Activity Card -->
+      <div class="card" id="activityCard">
+        <p class="card-label">Recent Activity</p>
+        <div class="feed" id="feed" role="list">
+          <p class="feed-empty" id="feedEmpty">
+            No activity yet. Savings events will appear here.
+          </p>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- ── Modal ────────────────────────────────────────── -->
+  <div class="modal-overlay" id="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-box">
+      <div class="spinner" id="modalSpinner" aria-hidden="true"></div>
+      <h3 class="modal-title" id="modalTitle">Confirm in wallet</h3>
+      <p class="modal-desc" id="modalDesc">Check MetaMask and approve the transaction.</p>
+      <p class="modal-hash" id="modalHash"></p>
+      <button class="btn" id="modalClose" hidden>Close</button>
+    </div>
+  </div>
+
+  <!-- ── Toast ─────────────────────────────────────────── -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Scripts -->
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
