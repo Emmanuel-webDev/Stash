@@ -1,82 +1,70 @@
-import { parseAbiItem, type PublicClient } from 'viem'
+import { parseAbi, getAddress, type PublicClient } from 'viem'
 import { config } from '../config.js'
 import { store } from '../db/store.js'
 import { log } from '../utils/logger.js'
 import { executeDeposit } from '../processor/deposit.js'
 import { relayerAccount } from '../utils/clients.js'
 
-const TRANSFER_ABI = parseAbiItem(
+// 1. Use parseAbi for cleaner typing alignment with watchContractEvent
+const APP_ABI = parseAbi([
   'event Transfer(address indexed from, address indexed to, uint256 value)'
-)
+])
 
-// Arc system emitter — single source of truth for ALL USDC movements
-// Emits Transfer events for wallet sends, swaps, NFT mints, contract calls
-// Values are in 18 decimals — normalize to 6 for vault
-const SYSTEM_EMITTER  = '0xfffffffffffffffffffffffffffffffffffffffe' as `0x${string}`
-const DECIMAL_DIVISOR = 1_000_000_000_000n // 10^12: 18dec → 6dec
+const SYSTEM_EMITTER  = getAddress('0xfffffffffffffffffffffffffffffffffffffffe')
+const DECIMAL_DIVISOR = 1_000_000_000_000n
 
-export function startTransferListener(publicClient: PublicClient): void {
+export function startTransferListener(publicClient: PublicClient): () => void {
   log.info(`Listening to Arc system emitter @ ${SYSTEM_EMITTER}`)
 
-  const vaultAddr   = config.vaultAddress.toLowerCase()
-  const relayerAddr = relayerAccount.address.toLowerCase()
+  const vaultAddr   = getAddress(config.vaultAddress)
+  const relayerAddr = getAddress(relayerAccount.address)
 
-  let lastBlock = 0n
+  // watchContractEvent automatically tracks blocks and safely fetches logs
+  const unwatch = publicClient.watchContractEvent({
+    address: SYSTEM_EMITTER,
+    abi: APP_ABI,
+    eventName: 'Transfer',
+    onLogs: async (logs) => {
+      for (const l of logs) {
+        if (!l.transactionHash || l.logIndex === undefined) continue
 
-  publicClient.watchBlocks({
-    onBlock: async (block) => {
-      if (!block.number || block.number <= lastBlock) return
-      lastBlock = block.number
+        // viem automatically decodes and strongly types l.args from the ABI
+        const { from: fromArg, to: toArg, value } = l.args
+        if (!fromArg || !toArg || !value || value === 0n) continue
 
-      try {
-        // One getLogs call on the system emitter catches everything:
-        // wallet sends, DEX swaps, NFT mints, merchant payments, contract calls
-        const logs = await publicClient.getLogs({
-          address   : SYSTEM_EMITTER,
-          event     : TRANSFER_ABI,
-          fromBlock : block.number,
-          toBlock   : block.number,
-        })
+        const from = getAddress(fromArg)
+        const to   = getAddress(toArg)
 
-        if (logs.length === 0) return
+        // Filter out unwanted interactions
+        if (from === relayerAddr || to === vaultAddr) continue
 
-        for (const l of logs) {
-          const from  = (l.args.from  as string | undefined)?.toLowerCase()
-          const to    = (l.args.to    as string | undefined)?.toLowerCase()
-          const value =  l.args.value as bigint | undefined
+        // Check database state
+        const user = store.getActiveUser(from)
+        if (!user) continue
 
-          if (!from || !to || !value || value === 0n) continue
+        if (store.isLogProcessed(l.transactionHash, l.logIndex)) continue
 
-          // Skip relayer's own depositFor transactions
-          if (from === relayerAddr) continue
+        const normalizedValue = value / DECIMAL_DIVISOR
+        if (normalizedValue === 0n) continue
 
-          // Skip transfers going into the vault
-          if (to === vaultAddr) continue
+        log.event(`Spend: ${from} amount=${normalizedValue} USDC tx=${l.transactionHash}`)
 
-          // Check if sender is a registered active user
-          const user = store.getActiveUser(from)
-          if (!user) continue
-
-          if (store.isLogProcessed(l.transactionHash!, l.logIndex!)) continue
-
-          // Normalize 18 decimals → 6 decimals
-          const normalizedValue = value / DECIMAL_DIVISOR
-          if (normalizedValue === 0n) continue
-
-          log.event(`Spend: ${from} amount=${normalizedValue} USDC tx=${l.transactionHash}`)
-
-          void executeDeposit(
-            from as `0x${string}`,
+        // Wrap processing in its own try/catch so one bad DB write doesn't kill the loop
+        try {
+          await executeDeposit(
+            from,
             user.basis_points,
             normalizedValue,
-            l.transactionHash!,
-            l.logIndex!,
+            l.transactionHash,
+            l.logIndex,
           )
+        } catch (depositErr) {
+          log.error(`Failed to execute deposit for tx ${l.transactionHash}:`, depositErr)
         }
-      } catch (err: unknown) {
-        log.error(`block ${block.number}: ${err instanceof Error ? err.message : String(err)}`)
       }
     },
-    onError: (err) => log.error('watchBlocks:', err.message),
+    onError: (err) => log.error('watchContractEvent encountered an error:', err.message),
   })
+
+  return unwatch
 }
