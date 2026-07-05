@@ -2,14 +2,15 @@
 // vault.js — Vault contract interactions
 // ═══════════════════════════════════════════════
 
-import { VAULT_ADDRESS, USDC_ADDRESS, VAULT_ABI, USDC_ABI, MAX_UINT256, BACKFILL_BLOCKS } from './config.js'
+import { VAULT_ADDRESS, USDC_ADDRESS, VAULT_ABI, USDC_ABI, MAX_UINT256, VAULT_DEPLOY_BLOCK } from './config.js'
 import { getAccount, getPublicClient, getViem, sendTx } from './wallet.js'
 import { addFeedItem, setStatus, updateBalance, formatUSDC, el } from './ui.js'
 import { showToast, openModal, updateModal } from './ui.js'
 
+// Arc RPC limit is 10,000 blocks per getLogs call — chunk to stay under it
+const CHUNK_SIZE = 9_000n
+
 let stopWatcher = null
-let trackedVolume = 0
-let eventCount    = 0
 
 // ── Read: load full user state from vault ─────────────────────────────────────
 export async function loadUserState() {
@@ -33,13 +34,12 @@ export async function loadUserState() {
 
     if (active) {
       const pct = Number(basisPoints) / 100
-
-      el.rateDisplay.textContent   = pct + '%'
-      el.rateValue.textContent     = pct
-      el.rateSlider.value          = pct
-      el.configureBtn.textContent  = 'Update Rate'
-      el.pauseBtn.hidden           = listeningPaused
-      el.resumeBtn.hidden          = !listeningPaused
+      el.rateDisplay.textContent  = pct + '%'
+      el.rateValue.textContent    = pct
+      el.rateSlider.value         = pct
+      el.configureBtn.textContent = 'Update Rate'
+      el.pauseBtn.hidden          = listeningPaused
+      el.resumeBtn.hidden         = !listeningPaused
 
       setStatus(
         listeningPaused
@@ -61,46 +61,71 @@ export async function loadUserState() {
   }
 }
 
-// ── Read: backfill recent events from vault ───────────────────────────────────
+// ── Read: backfill ALL events from vault deploy block ─────────────────────────
+// Fetches in 9,000-block chunks to stay under Arc's 10,000 block RPC limit.
+// Stats computed entirely from on-chain data — accurate on any device.
 async function loadRecentEvents() {
   const account      = getAccount()
   const publicClient = getPublicClient()
 
+  const depositedEvent    = VAULT_ABI.find(e => e.name === 'Deposited')
+  const withdrawnEvent    = VAULT_ABI.find(e => e.name === 'Withdrawn')
+  const configuredEvent   = VAULT_ABI.find(e => e.name === 'Configured')
+  const pausedEvent       = VAULT_ABI.find(e => e.name === 'ListeningPaused')
+  const resumedEvent      = VAULT_ABI.find(e => e.name === 'ListeningResumed')
+
+  const allDeposits    = []
+  const allWithdrawals = []
+  const allConfigs     = []
+  const allPauses      = []
+  const allResumes     = []
+
   try {
     const currentBlock = await publicClient.getBlockNumber()
-    const fromBlock    = currentBlock > BACKFILL_BLOCKS ? currentBlock - BACKFILL_BLOCKS : 0n
 
-    const eventNames = ['Deposited', 'Withdrawn', 'Configured', 'ListeningPaused', 'ListeningResumed']
+    // Chunk through all blocks from vault deploy to now
+    for (let from = VAULT_DEPLOY_BLOCK; from <= currentBlock; from += CHUNK_SIZE) {
+      const to = from + CHUNK_SIZE - 1n > currentBlock ? currentBlock : from + CHUNK_SIZE - 1n
 
-    const results = await Promise.all(
-      eventNames.map(name =>
-        publicClient.getLogs({
-          address  : VAULT_ADDRESS,
-          event    : VAULT_ABI.find(e => e.name === name),
-          fromBlock,
-          toBlock  : currentBlock,
-          args     : { user: account },
-        })
-      )
-    )
+      const [deposits, withdrawals, configs, pauses, resumes] = await Promise.all([
+        publicClient.getLogs({ address: VAULT_ADDRESS, event: depositedEvent,  fromBlock: from, toBlock: to, args: { user: account } }),
+        publicClient.getLogs({ address: VAULT_ADDRESS, event: withdrawnEvent,  fromBlock: from, toBlock: to, args: { user: account } }),
+        publicClient.getLogs({ address: VAULT_ADDRESS, event: configuredEvent, fromBlock: from, toBlock: to, args: { user: account } }),
+        publicClient.getLogs({ address: VAULT_ADDRESS, event: pausedEvent,     fromBlock: from, toBlock: to, args: { user: account } }),
+        publicClient.getLogs({ address: VAULT_ADDRESS, event: resumedEvent,    fromBlock: from, toBlock: to, args: { user: account } }),
+      ])
 
-    const [deposits, withdrawals, configs, pauses, resumes] = results
+      allDeposits.push(...deposits)
+      allWithdrawals.push(...withdrawals)
+      allConfigs.push(...configs)
+      allPauses.push(...pauses)
+      allResumes.push(...resumes)
+    }
 
-    const all = [
-      ...deposits.map(l    => ({ ...l, _type: 'deposit'  })),
-      ...withdrawals.map(l => ({ ...l, _type: 'withdraw' })),
-      ...configs.map(l     => ({ ...l, _type: 'config'   })),
-      ...pauses.map(l      => ({ ...l, _type: 'pause'    })),
-      ...resumes.map(l     => ({ ...l, _type: 'resume'   })),
-    ].sort((a, b) => Number(b.blockNumber - a.blockNumber))
+    // Compute stats from on-chain data — source of truth on any device
+    let trackedVolume = 0
+    let eventCount    = 0
 
-    for (const l of all.slice(0, 20)) {
-      const meta = `Block ${l.blockNumber}`
-      _renderEvent(l._type, l.args, meta)
+    for (const l of allDeposits) {
+      trackedVolume += Number(l.args.amount) / 1e6
+      eventCount++
     }
 
     el.eventsDisplay.textContent = eventCount
     el.volumeDisplay.textContent = '$' + trackedVolume.toFixed(2)
+
+    // Build and render sorted feed (latest first, cap at 20 items)
+    const all = [
+      ...allDeposits.map(l    => ({ ...l, _type: 'deposit'  })),
+      ...allWithdrawals.map(l => ({ ...l, _type: 'withdraw' })),
+      ...allConfigs.map(l     => ({ ...l, _type: 'config'   })),
+      ...allPauses.map(l      => ({ ...l, _type: 'pause'    })),
+      ...allResumes.map(l     => ({ ...l, _type: 'resume'   })),
+    ].sort((a, b) => Number(b.blockNumber - a.blockNumber))
+
+    for (const l of all.slice(0, 20)) {
+      _renderFeedItem(l._type, l.args, `Block ${l.blockNumber}`)
+    }
 
   } catch (err) {
     console.error('loadRecentEvents:', err)
@@ -121,8 +146,15 @@ function startEventWatcher() {
     args     : { user: account },
     onLogs   : (logs) => {
       for (const l of logs) {
-        _renderEvent('deposit', l.args, 'Just now')
+        _renderFeedItem('deposit', l.args, 'Just now')
         updateBalance(l.args.totalBalance)
+
+        // Update stats display live
+        const currentVolume = parseFloat(el.volumeDisplay.textContent.replace('$', '') || '0')
+        const currentEvents = parseInt(el.eventsDisplay.textContent || '0', 10)
+        el.volumeDisplay.textContent = '$' + (currentVolume + Number(l.args.amount) / 1e6).toFixed(2)
+        el.eventsDisplay.textContent = currentEvents + 1
+
         showToast(`Saved ${formatUSDC(l.args.amount)} USDC from your spend ✓`)
       }
     },
@@ -142,7 +174,6 @@ export async function configure(basisPoints) {
   openModal('Activating savings', `Setting your rate to ${basisPoints / 100}%. Check MetaMask.`)
 
   try {
-    // Check and set USDC allowance if needed
     const allowance = await publicClient.readContract({
       address: USDC_ADDRESS, abi: USDC_ABI,
       functionName: 'allowance', args: [account, VAULT_ADDRESS],
@@ -268,25 +299,16 @@ export async function withdraw() {
   }
 }
 
-// ── Internal: render a feed event ────────────────────────────────────────────
-function _renderEvent(type, args, meta) {
+// ── Internal: render feed item ────────────────────────────────────────────────
+function _renderFeedItem(type, args, meta) {
   if (type === 'deposit') {
-    const amt = formatUSDC(args.amount)
-    eventCount++
-    trackedVolume += Number(args.amount) / 1e6
-    el.eventsDisplay.textContent = eventCount
-    el.volumeDisplay.textContent = '$' + trackedVolume.toFixed(2)
-    addFeedItem({ title: 'Auto-Save', meta, amount: `+${amt} USDC`, type: 'save' })
-
+    addFeedItem({ title: 'Auto-Save', meta, amount: `+${formatUSDC(args.amount)} USDC`, type: 'save' })
   } else if (type === 'withdraw') {
     addFeedItem({ title: 'Withdrawal', meta, amount: `-${formatUSDC(args.amount)} USDC`, type: 'withdraw' })
-
   } else if (type === 'config') {
     addFeedItem({ title: 'Rate Set', meta: `${Number(args.basisPoints) / 100}% · ${meta}`, type: 'config' })
-
   } else if (type === 'pause') {
     addFeedItem({ title: 'Paused', meta, type: 'pause' })
-
   } else if (type === 'resume') {
     addFeedItem({ title: 'Resumed', meta, type: 'resume' })
   }
