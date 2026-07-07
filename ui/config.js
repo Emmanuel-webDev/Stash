@@ -2,12 +2,12 @@
 // config.js — App-wide constants
 // ═══════════════════════════════════════════════
 
-export const VAULT_ADDRESS = "0x2E7293B6334b8780491D83c0912cC9B573fdCf1C";  
+export const VAULT_ADDRESS = "0x00DEB753f38757C17B78E55D50474E962Ee64D31";  
 export const USDC_ADDRESS   = '0x3600000000000000000000000000000000000000'
 export const ARC_CHAIN_ID   = 5042002
 export const ARC_RPC        = 'https://rpc.testnet.arc.network'
 export const ARC_EXPLORER   = 'https://testnet.arcscan.app'
-export const VAULT_DEPLOY_BLOCK = 50142641n;
+export const VAULT_DEPLOY_BLOCK = 50652340n;
 
 export const VAULT_ABI = [
   { name: 'configure',        type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'basisPoints',  type: 'uint256' }], outputs: [] },

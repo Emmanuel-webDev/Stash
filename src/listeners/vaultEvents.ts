@@ -1,17 +1,85 @@
-import { parseAbiItem, type PublicClient } from 'viem'
+import { parseAbiItem, getAddress, type PublicClient } from 'viem'
 import { config } from '../config.js'
 import { store } from '../db/store.js'
 import { log } from '../utils/logger.js'
 
+// Single ABI definition used for both watchContractEvent and getLogs
 const CONFIGURED_ABI = parseAbiItem('event Configured(address indexed user, uint256 basisPoints)')
 const PAUSED_ABI     = parseAbiItem('event ListeningPaused(address indexed user)')
 const RESUMED_ABI    = parseAbiItem('event ListeningResumed(address indexed user)')
 
-const CHUNK_SIZE = 9_000n // Arc RPC limit is 10,000 blocks per getLogs request
+const CHUNK_SIZE = 9_000n
 
-async function backfill(publicClient: PublicClient, fromBlock: bigint, toBlock: bigint): Promise<void> {
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function applyConfigured(user: string, basisPoints: bigint | number, prefix: string): void {
+  store.upsertUser(getAddress(user), Number(basisPoints))
+  log.event(`${prefix} Configured: ${user} @ ${basisPoints}bp`)
+}
+
+function applyPaused(user: string, prefix: string): void {
+  store.pauseUser(getAddress(user))
+  log.event(`${prefix} Paused: ${user}`)
+}
+
+function applyResumed(user: string, prefix: string): void {
+  store.resumeUser(getAddress(user))
+  log.event(`${prefix} Resumed: ${user}`)
+}
+
+// ── Live vault lifecycle listener ─────────────────────────────────────────────
+// Started BEFORE backfill — catches any Configured/Paused/Resumed events
+// that fire while the backfill is running. upsertUser is idempotent so
+// if backfill later processes the same event, it safely overwrites.
+function startVaultLifecycleListener(publicClient: PublicClient): void {
+  log.info(`Live vault lifecycle listener active @ ${config.vaultAddress}`)
+
+  publicClient.watchContractEvent({
+    address  : getAddress(config.vaultAddress),
+    abi      : [CONFIGURED_ABI],
+    eventName: 'Configured',
+    onLogs   : (logs) => {
+      for (const l of logs) {
+        if (!l.args.user || l.args.basisPoints === undefined) continue
+        applyConfigured(l.args.user as string, l.args.basisPoints as bigint, '[Live]')
+      }
+    },
+    onError: (err) => log.error(`vaultLifecycle[Configured]: ${err.message}`),
+  })
+
+  publicClient.watchContractEvent({
+    address  : getAddress(config.vaultAddress),
+    abi      : [PAUSED_ABI],
+    eventName: 'ListeningPaused',
+    onLogs   : (logs) => {
+      for (const l of logs) {
+        if (!l.args.user) continue
+        applyPaused(l.args.user as string, '[Live]')
+      }
+    },
+    onError: (err) => log.error(`vaultLifecycle[Paused]: ${err.message}`),
+  })
+
+  publicClient.watchContractEvent({
+    address  : getAddress(config.vaultAddress),
+    abi      : [RESUMED_ABI],
+    eventName: 'ListeningResumed',
+    onLogs   : (logs) => {
+      for (const l of logs) {
+        if (!l.args.user) continue
+        applyResumed(l.args.user as string, '[Live]')
+      }
+    },
+    onError: (err) => log.error(`vaultLifecycle[Resumed]: ${err.message}`),
+  })
+}
+
+// ── Backfill — fetches all historical events in 9,000-block chunks ────────────
+async function backfill(
+  publicClient: PublicClient,
+  fromBlock   : bigint,
+  toBlock     : bigint,
+): Promise<void> {
   log.info(`Backfilling vault events from block ${fromBlock} to ${toBlock}...`)
-
   let totalConfigured = 0
 
   for (let from = fromBlock; from <= toBlock; from += CHUNK_SIZE) {
@@ -24,51 +92,24 @@ async function backfill(publicClient: PublicClient, fromBlock: bigint, toBlock: 
     ])
 
     for (const l of configured) {
-      store.upsertUser(l.args.user as `0x${string}`, Number(l.args.basisPoints))
-      log.event(`[backfill] Configured: ${l.args.user} @ ${l.args.basisPoints}bp`)
+      applyConfigured(l.args.user as string, l.args.basisPoints as bigint, '[Backfill]')
       totalConfigured++
     }
-    for (const l of paused)  { store.pauseUser(l.args.user  as `0x${string}`); log.event(`[backfill] Paused: ${l.args.user}`) }
-    for (const l of resumed) { store.resumeUser(l.args.user as `0x${string}`); log.event(`[backfill] Resumed: ${l.args.user}`) }
+    for (const l of paused)  applyPaused(l.args.user   as string, '[Backfill]')
+    for (const l of resumed) applyResumed(l.args.user  as string, '[Backfill]')
   }
 
   log.ok(`Backfill done — ${totalConfigured} users loaded`)
 }
 
+// ── Entry point ───────────────────────────────────────────────────────────────
 export async function startVaultEventListeners(publicClient: PublicClient): Promise<void> {
   log.info(`Watching vault @ ${config.vaultAddress}`)
 
+  // 1. Live listener starts first — no events missed during backfill
+  startVaultLifecycleListener(publicClient)
+
+  // 2. Backfill all history from vault deploy block to now
   const currentBlock = await publicClient.getBlockNumber()
-
-  // Start backfill from vault deploy block — avoids scanning millions of irrelevant blocks
-  // VAULT_DEPLOY_BLOCK must be set in .env (check testnet.arcscan.app for your contract's deploy block)
   await backfill(publicClient, config.vaultDeployBlock, currentBlock)
-
-  let lastBlock = currentBlock
-
-  publicClient.watchBlocks({
-    onBlock: async (block) => {
-      if (block.number === null || block.number <= lastBlock) return
-      lastBlock = block.number
-
-      try {
-        const [configured, paused, resumed] = await Promise.all([
-          publicClient.getLogs({ address: config.vaultAddress, event: CONFIGURED_ABI, fromBlock: block.number, toBlock: block.number }),
-          publicClient.getLogs({ address: config.vaultAddress, event: PAUSED_ABI,     fromBlock: block.number, toBlock: block.number }),
-          publicClient.getLogs({ address: config.vaultAddress, event: RESUMED_ABI,    fromBlock: block.number, toBlock: block.number }),
-        ])
-
-        for (const l of configured) {
-          store.upsertUser(l.args.user as `0x${string}`, Number(l.args.basisPoints))
-          log.event(`Configured: ${l.args.user} @ ${l.args.basisPoints}bp`)
-        }
-        for (const l of paused)  { store.pauseUser(l.args.user  as `0x${string}`); log.event(`Paused: ${l.args.user}`) }
-        for (const l of resumed) { store.resumeUser(l.args.user as `0x${string}`); log.event(`Resumed: ${l.args.user}`) }
-
-      } catch (err: unknown) {
-        log.error(`vaultEvents block ${block.number}: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    },
-    onError: (err) => log.error('watchBlocks[vault]:', err.message),
-  })
 }
