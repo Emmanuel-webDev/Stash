@@ -4,7 +4,7 @@
 
 import { ARC_CHAIN_ID, ARC_RPC, ARC_EXPLORER } from './config.js'
 import { loadViem, createPublicClient } from './chain.js'
-import { showToast } from './ui.js'
+import { showToast, friendlyError } from './ui.js'
 
 let _account      = null
 let _publicClient = null
@@ -34,7 +34,7 @@ export async function connectWallet() {
 
     return _account
   } catch (err) {
-    showToast('Connection failed: ' + (err.message || err))
+    showToast('Connection failed: ' + friendlyError(err))
     return null
   }
 }

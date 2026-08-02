@@ -14,7 +14,7 @@ export async function loadViem() {
 }
 
 /** Arc Testnet chain definition for viem */
-export function getArcChain(viemInstance) {
+function getArcChain(viemInstance) {
   return viemInstance.defineChain({
     id     : ARC_CHAIN_ID,
     name   : 'Arc Testnet',
@@ -35,6 +35,10 @@ export function getArcChain(viemInstance) {
 export function createPublicClient(viemInstance) {
   return viemInstance.createPublicClient({
     chain    : getArcChain(viemInstance),
-    transport: viemInstance.http(ARC_RPC),
+    transport: viemInstance.http(ARC_RPC, {
+      retryCount: 3,
+      retryDelay: 1_000,
+      timeout   : 15_000,
+    }),
   })
 }

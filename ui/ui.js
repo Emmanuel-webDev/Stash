@@ -30,6 +30,7 @@ export const el = {
   modalDesc     : document.getElementById('modalDesc'),
   modalHash     : document.getElementById('modalHash'),
   modalSpinner  : document.getElementById('modalSpinner'),
+  modalIcon     : document.getElementById('modalIcon'),
   modalClose    : document.getElementById('modalClose'),
   toast         : document.getElementById('toast'),
 }
@@ -56,23 +57,49 @@ export function showToast(message, duration = 3500) {
   toastTimer = setTimeout(() => el.toast.classList.remove('toast--show'), duration)
 }
 
+// ── Error formatting ─────────────────────────────────────────────────────────
+
+/** Turn a raw viem/MetaMask error into a short, human-readable sentence */
+export function friendlyError(err) {
+  if (!err) return 'Something went wrong. Please try again.'
+
+  const code = err.code ?? err.cause?.code
+  if (code === 4001) return 'Request cancelled in wallet.'
+
+  const raw = String(err.shortMessage || err.message || err)
+
+  if (/user rejected/i.test(raw)) return 'Request cancelled in wallet.'
+  if (/failed to fetch|network ?error|http request failed|timeout/i.test(raw)) {
+    return 'Could not reach the Arc network. Check your connection and try again.'
+  }
+  if (/insufficient funds/i.test(raw)) return 'Insufficient USDC balance to cover this transaction.'
+
+  const firstLine = raw.split('\n')[0].trim()
+  return firstLine.length > 140 ? firstLine.slice(0, 140).trim() + '…' : firstLine
+}
+
 // ── Modal ─────────────────────────────────────────────────────────────────────
 export function openModal(title, desc) {
   el.modalTitle.textContent      = title
   el.modalDesc.textContent       = desc
   el.modalHash.textContent       = ''
   el.modalSpinner.hidden         = false
+  el.modalIcon.hidden            = true
   el.modalClose.hidden           = true
   el.modal.setAttribute('aria-hidden', 'false')
   el.modal.classList.add('modal-overlay--open')
 }
 
-export function updateModal(title, desc, txHash = '') {
-  el.modalTitle.textContent = title
-  el.modalDesc.textContent  = desc
-  el.modalHash.textContent  = txHash ? `Tx: ${txHash}` : ''
-  el.modalSpinner.hidden    = true
-  el.modalClose.hidden      = false
+/** state: 'success' | 'error' — controls the icon shown once the spinner resolves */
+export function updateModal(title, desc, txHash = '', state = 'success') {
+  el.modalTitle.textContent      = title
+  el.modalDesc.textContent       = desc
+  el.modalHash.textContent       = txHash ? `Tx: ${txHash}` : ''
+  el.modalSpinner.hidden         = true
+  el.modalIcon.hidden            = false
+  el.modalIcon.dataset.state     = state
+  el.modalIcon.textContent       = state === 'error' ? '✕' : '✓'
+  el.modalClose.hidden           = false
 }
 
 export function closeModal() {

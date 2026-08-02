@@ -52,7 +52,7 @@
     <section class="dashboard" id="dashboard" hidden>
 
       <!-- Balance Card -->
-      <div class="card" id="balanceCard">
+      <div class="card">
         <p class="card-label">Vault Balance</p>
         <div class="balance-row">
           <div class="balance-amount">
@@ -84,7 +84,7 @@
       </div>
 
       <!-- Configuration Card -->
-      <div class="card" id="configCard">
+      <div class="card">
         <p class="card-label">Savings Rate</p>
 
         <div class="rate-display">
@@ -121,7 +121,7 @@
       </div>
 
       <!-- Activity Card -->
-      <div class="card" id="activityCard">
+      <div class="card">
         <p class="card-label">Recent Activity</p>
         <div class="feed" id="feed" role="list">
           <p class="feed-empty" id="feedEmpty">
@@ -137,6 +137,7 @@
   <div class="modal-overlay" id="modal" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="modal-box">
       <div class="spinner" id="modalSpinner" aria-hidden="true"></div>
+      <div class="modal-icon" id="modalIcon" hidden aria-hidden="true"></div>
       <h3 class="modal-title" id="modalTitle">Confirm in wallet</h3>
       <p class="modal-desc" id="modalDesc">Check MetaMask and approve the transaction.</p>
       <p class="modal-hash" id="modalHash"></p>

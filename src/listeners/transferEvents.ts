@@ -1,14 +1,12 @@
-import { parseAbi, getAddress, type PublicClient } from 'viem'
+import { parseAbiItem, getAddress, type PublicClient } from 'viem'
 import { config } from '../config.js'
 import { store } from '../db/store.js'
 import { log } from '../utils/logger.js'
 import { executeDeposit } from '../processor/deposit.js'
 import { relayerAccount } from '../utils/clients.js'
+import { watchLogsPolling } from '../utils/watchLogs.js'
 
-// 1. Use parseAbi for cleaner typing alignment with watchContractEvent
-const APP_ABI = parseAbi([
-  'event Transfer(address indexed from, address indexed to, uint256 value)'
-])
+const TRANSFER_ABI = parseAbiItem('event Transfer(address indexed from, address indexed to, uint256 value)')
 
 const SYSTEM_EMITTER  = getAddress('0xfffffffffffffffffffffffffffffffffffffffe')
 const DECIMAL_DIVISOR = 1_000_000_000_000n
@@ -19,16 +17,18 @@ export function startTransferListener(publicClient: PublicClient): () => void {
   const vaultAddr   = getAddress(config.vaultAddress)
   const relayerAddr = getAddress(relayerAccount.address)
 
-  // watchContractEvent automatically tracks blocks and safely fetches logs
-  const unwatch = publicClient.watchContractEvent({
+  const unwatch = watchLogsPolling({
+    client : publicClient,
     address: SYSTEM_EMITTER,
-    abi: APP_ABI,
-    eventName: 'Transfer',
-    onLogs: async (logs) => {
-      for (const l of logs) {
-        if (!l.transactionHash || l.logIndex === undefined) continue
+    event  : TRANSFER_ABI,
+    onLogs : async (logs) => {
+      for (const l of logs as unknown as Array<{
+        transactionHash: `0x${string}` | null
+        logIndex: number | null
+        args: { from?: `0x${string}`; to?: `0x${string}`; value?: bigint }
+      }>) {
+        if (!l.transactionHash || l.logIndex === null || l.logIndex === undefined) continue
 
-        // viem automatically decodes and strongly types l.args from the ABI
         const { from: fromArg, to: toArg, value } = l.args
         if (!fromArg || !toArg || !value || value === 0n) continue
 

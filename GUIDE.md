@@ -5,12 +5,12 @@
 ```
 User spends USDC on Arc testnet
   → Arc node emits Transfer event
-    → Relayer WS subscription receives log instantly (sub-second, Malachite finality)
+    → Relayer polls for the log (block-range getLogs, ~1s interval)
       → DB lookup: is this sender an active registered user? (< 0.1ms SQLite)
         → Compute savings = spendAmount × basisPoints / 10000
-          → Send UserOperation to Pimlico bundler
-            → Pimlico paymaster pays gas in USDC (free on testnet)
-              → Vault calls transferFrom(user → vault) and credits balance
+          → Relayer sends depositFor(user, savings) directly from its own EOA
+            → Relayer pays gas in USDC (Arc's native gas token)
+              → Vault credits the user's balance
 ```
 
 ---
@@ -18,8 +18,7 @@ User spends USDC on Arc testnet
 ## Prerequisites
 
 - Node.js 20+
-- A wallet private key (for the relayer smart account owner)
-- Pimlico API key (free at https://dashboard.pimlico.io)
+- A wallet private key (for the relayer — a plain EOA, no account abstraction)
 - SavingsVault.sol deployed on Arc testnet
 
 ---
@@ -38,9 +37,9 @@ In Remix, set environment to **Injected Provider (MetaMask)** and switch MetaMas
 
 Deploy `SavingsVault.sol` with:
 - `_usdc` = `0x3600000000000000000000000000000000000000` (Arc system USDC)
-- `_relayer` = your relayer smart account address (see Step 3 to get this)
+- `_relayer` = your relayer wallet address (see Step 3 to get this)
 
-> **Deploy order:** Run Step 3 first to get the smart account address, then deploy the vault with that address as `_relayer`.
+> **Deploy order:** Run Step 3 first to get the relayer address, then deploy the vault with that address as `_relayer`.
 
 ---
 
@@ -59,7 +58,6 @@ Edit `.env`:
 
 ```env
 RELAYER_PRIVATE_KEY=0x_your_private_key
-PIMLICO_API_KEY=your_pimlico_api_key
 VAULT_ADDRESS=0x_your_deployed_vault_address
 USDC_ADDRESS=0x3600000000000000000000000000000000000000
 ARC_RPC_HTTP=https://rpc.testnet.arc.network
@@ -68,9 +66,9 @@ ARC_RPC_WSS=wss://rpc.testnet.arc.network
 
 ---
 
-## Step 3 — Get your smart account address
+## Step 3 — Get your relayer address
 
-The relayer uses an ERC-4337 smart account (not a plain EOA). The smart account address is deterministic from your private key.
+The relayer is a plain EOA wallet derived from `RELAYER_PRIVATE_KEY` — no smart account, no bundler.
 
 Run the relayer once to see it:
 
@@ -81,8 +79,7 @@ npm run dev
 
 You'll see:
 ```
-✅  Smart account (relayer): 0xYourSmartAccountAddress
-⚠️  Fund this address with testnet USDC for gas → https://faucet.circle.com
+Relayer: 0xYourRelayerAddress
 ```
 
 **Copy this address** — you need it for two things:
@@ -91,13 +88,11 @@ You'll see:
 
 ---
 
-## Step 4 — Fund the smart account with testnet USDC
+## Step 4 — Fund the relayer with testnet USDC
 
-Go to https://faucet.circle.com → select **Arc Testnet** → paste your smart account address.
+Go to https://faucet.circle.com → select **Arc Testnet** → paste your relayer address.
 
 You get 1 USDC/day. On Arc testnet, gas costs ~0.000001 USDC per tx — 1 USDC covers thousands of deposits.
-
-> **Important:** Fund the SMART ACCOUNT address (from Step 3), not your private key's EOA address.
 
 ---
 
@@ -115,9 +110,9 @@ Creates `relayer.db` with two tables:
 
 ## Step 6 — Connect vault to relayer (update `_relayer` in vault)
 
-If you deployed the vault before getting the smart account address:
-1. Call `setRelayer(smartAccountAddress)` on the vault from the owner account
-2. Verify: call `relayer()` on the vault — should return the smart account address
+If you deployed the vault before getting the relayer address:
+1. Call `setRelayer(relayerAddress)` on the vault from the owner account
+2. Verify: call `relayer()` on the vault — should return the relayer address
 
 ---
 
@@ -155,7 +150,7 @@ npm run build && npm start
    → Relayer receives `Transfer` event
    → DB lookup: user is active @ 500bp
    → Computes savings: 100 × 500 / 10000 = 5 USDC
-   → Sends UserOp to Pimlico → vault credits 5 USDC to user
+   → Relayer sends `depositFor` directly → vault credits 5 USDC to user
 
 4. **Verify:**
    ```
@@ -185,11 +180,11 @@ pm2 save  # persist across reboots
 
 ## Monitoring
 
-Watch gas balance — if the smart account runs out of USDC, UserOps fail:
+Watch gas balance — if the relayer runs out of USDC, transactions fail:
 
 ```bash
-# Check smart account USDC balance via Arc explorer
-https://testnet.arcscan.app/address/YOUR_SMART_ACCOUNT_ADDRESS
+# Check relayer USDC balance via Arc explorer
+https://testnet.arcscan.app/address/YOUR_RELAYER_ADDRESS
 ```
 
 Set up a balance alert: add a cron job that checks the balance and emails/Slacks when it drops below a threshold.

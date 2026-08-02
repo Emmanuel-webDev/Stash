@@ -580,6 +580,8 @@ main {
 .modal-box {
   width: 100%;
   max-width: 360px;
+  max-height: min(480px, 80vh);
+  overflow-y: auto;
   padding: var(--space-8);
   background: var(--white);
   border: 1px solid var(--line);
@@ -598,6 +600,7 @@ main {
   font-family: var(--font-serif);
   font-size: 22px;
   margin-bottom: var(--space-2);
+  overflow-wrap: break-word;
 }
 
 .modal-desc {
@@ -605,6 +608,8 @@ main {
   color: var(--ink-2);
   margin-bottom: var(--space-6);
   line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .modal-hash {
@@ -612,6 +617,7 @@ main {
   font-size: 11px;
   color: var(--ink-3);
   word-break: break-all;
+  overflow-wrap: break-word;
   margin-top: var(--space-3);
   line-height: 1.6;
 }
@@ -628,6 +634,28 @@ main {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.modal-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto var(--space-4);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.modal-icon[data-state="success"] {
+  background: var(--green-dim);
+  color: var(--green);
+}
+
+.modal-icon[data-state="error"] {
+  background: var(--red-dim);
+  color: var(--red);
 }
 
 

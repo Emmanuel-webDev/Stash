@@ -4,8 +4,7 @@
 
 import { VAULT_ADDRESS, USDC_ADDRESS, VAULT_ABI, USDC_ABI, MAX_UINT256, VAULT_DEPLOY_BLOCK } from './config.js'
 import { getAccount, getPublicClient, getViem, sendTx } from './wallet.js'
-import { addFeedItem, setStatus, updateBalance, formatUSDC, el } from './ui.js'
-import { showToast, openModal, updateModal } from './ui.js'
+import { addFeedItem, setStatus, updateBalance, formatUSDC, el, showToast, openModal, updateModal, friendlyError } from './ui.js'
 
 // Arc RPC limit is 10,000 blocks per getLogs call — chunk to stay under it
 const CHUNK_SIZE = 9_000n
@@ -64,15 +63,22 @@ export async function loadUserState() {
 // ── Read: backfill ALL events from vault deploy block ─────────────────────────
 // Fetches in 9,000-block chunks to stay under Arc's 10,000 block RPC limit.
 // Stats computed entirely from on-chain data — accurate on any device.
+//
+// Fetches ONE unfiltered getLogs call per chunk (instead of 5, one per event
+// type) and decodes/routes locally by topic0 — Arc's public RPC rate-limits
+// aggressively (429 "request limit reached"), and 5x the requests was slow
+// and error-prone on every wallet connect.
 async function loadRecentEvents() {
   const account      = getAccount()
   const publicClient = getPublicClient()
+  const viem         = getViem()
 
-  const depositedEvent    = VAULT_ABI.find(e => e.name === 'Deposited')
-  const withdrawnEvent    = VAULT_ABI.find(e => e.name === 'Withdrawn')
-  const configuredEvent   = VAULT_ABI.find(e => e.name === 'Configured')
-  const pausedEvent       = VAULT_ABI.find(e => e.name === 'ListeningPaused')
-  const resumedEvent      = VAULT_ABI.find(e => e.name === 'ListeningResumed')
+  const EVENTS = ['Deposited', 'Withdrawn', 'Configured', 'ListeningPaused', 'ListeningResumed']
+    .map(name => VAULT_ABI.find(e => e.name === name))
+
+  const topicToEvent = new Map(
+    EVENTS.map(ev => [viem.encodeEventTopics({ abi: [ev], eventName: ev.name })[0], ev])
+  )
 
   const allDeposits    = []
   const allWithdrawals = []
@@ -82,24 +88,36 @@ async function loadRecentEvents() {
 
   try {
     const currentBlock = await publicClient.getBlockNumber()
+    const accountLower  = account.toLowerCase()
 
     // Chunk through all blocks from vault deploy to now
     for (let from = VAULT_DEPLOY_BLOCK; from <= currentBlock; from += CHUNK_SIZE) {
       const to = from + CHUNK_SIZE - 1n > currentBlock ? currentBlock : from + CHUNK_SIZE - 1n
 
-      const [deposits, withdrawals, configs, pauses, resumes] = await Promise.all([
-        publicClient.getLogs({ address: VAULT_ADDRESS, event: depositedEvent,  fromBlock: from, toBlock: to, args: { user: account } }),
-        publicClient.getLogs({ address: VAULT_ADDRESS, event: withdrawnEvent,  fromBlock: from, toBlock: to, args: { user: account } }),
-        publicClient.getLogs({ address: VAULT_ADDRESS, event: configuredEvent, fromBlock: from, toBlock: to, args: { user: account } }),
-        publicClient.getLogs({ address: VAULT_ADDRESS, event: pausedEvent,     fromBlock: from, toBlock: to, args: { user: account } }),
-        publicClient.getLogs({ address: VAULT_ADDRESS, event: resumedEvent,    fromBlock: from, toBlock: to, args: { user: account } }),
-      ])
+      const logs = await publicClient.getLogs({ address: VAULT_ADDRESS, fromBlock: from, toBlock: to })
 
-      allDeposits.push(...deposits)
-      allWithdrawals.push(...withdrawals)
-      allConfigs.push(...configs)
-      allPauses.push(...pauses)
-      allResumes.push(...resumes)
+      for (const l of logs) {
+        const matched = l.topics[0] ? topicToEvent.get(l.topics[0]) : undefined
+        if (!matched) continue
+
+        let decoded
+        try {
+          decoded = viem.decodeEventLog({ abi: [matched], data: l.data, topics: l.topics })
+        } catch {
+          continue
+        }
+        if (!decoded.args?.user || decoded.args.user.toLowerCase() !== accountLower) continue
+
+        const entry = { ...l, args: decoded.args }
+        if (decoded.eventName === 'Deposited')             allDeposits.push(entry)
+        else if (decoded.eventName === 'Withdrawn')        allWithdrawals.push(entry)
+        else if (decoded.eventName === 'Configured')       allConfigs.push(entry)
+        else if (decoded.eventName === 'ListeningPaused')  allPauses.push(entry)
+        else if (decoded.eventName === 'ListeningResumed') allResumes.push(entry)
+      }
+
+      // Small gap between chunks — avoids bursting Arc's public RPC rate limit
+      if (to < currentBlock) await new Promise(r => setTimeout(r, 150))
     }
 
     // Compute stats from on-chain data — source of truth on any device
@@ -210,7 +228,7 @@ export async function configure(basisPoints) {
     showToast(`Savings activated at ${pct}% ✓`)
 
   } catch (err) {
-    updateModal('Transaction failed', err.message || 'Something went wrong.')
+    updateModal('Transaction failed', friendlyError(err), '', 'error')
   }
 }
 
@@ -234,7 +252,7 @@ export async function pauseListening() {
     updateModal('Paused', 'Savings are paused. Your balance is safe.', tx)
 
   } catch (err) {
-    updateModal('Failed', err.message || 'Something went wrong.')
+    updateModal('Failed', friendlyError(err), '', 'error')
   }
 }
 
@@ -258,7 +276,7 @@ export async function resumeListening() {
     updateModal('Resumed', 'Savings are active again.', tx)
 
   } catch (err) {
-    updateModal('Failed', err.message || 'Something went wrong.')
+    updateModal('Failed', friendlyError(err), '', 'error')
   }
 }
 
@@ -295,7 +313,7 @@ export async function withdraw() {
     showToast(`Withdrew ${formatUSDC(balance)} USDC ✓`)
 
   } catch (err) {
-    updateModal('Failed', err.message || 'Something went wrong.')
+    updateModal('Failed', friendlyError(err), '', 'error')
   }
 }
 

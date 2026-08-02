@@ -6,6 +6,7 @@
 import { el, showDashboard, showLanding, updateRateUI, closeModal } from './ui.js'
 import { connectWallet, disconnectWallet } from './wallet.js'
 import { loadUserState, stopEventWatcher, configure, pauseListening, resumeListening, withdraw } from './vault.js'
+import { ARC_CHAIN_ID } from './config.js'
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 updateRateUI(5)
@@ -65,12 +66,18 @@ if (window.ethereum) {
       disconnectWallet()
       showLanding()
     } else {
-      const { connectWallet: reconnect } = await import('./wallet.js')
       const account = accounts[0]
       showDashboard(account)
       await loadUserState()
     }
   })
 
-  window.ethereum.on('chainChanged', () => window.location.reload())
+  // MetaMask sometimes re-emits chainChanged for the chain we're already on
+  // (e.g. right after a transaction confirms) — only reload if it actually changed.
+  const arcChainHex = '0x' + ARC_CHAIN_ID.toString(16)
+  window.ethereum.on('chainChanged', (chainId) => {
+    if (String(chainId).toLowerCase() !== arcChainHex.toLowerCase()) {
+      window.location.reload()
+    }
+  })
 }
