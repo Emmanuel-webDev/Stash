@@ -13,21 +13,23 @@ export async function loadViem() {
   return viem
 }
 
-/** Arc Testnet chain definition for viem */
+/** Arc chain definition for viem */
 function getArcChain(viemInstance) {
   return viemInstance.defineChain({
     id     : ARC_CHAIN_ID,
-    name   : 'Arc Testnet',
-    network: 'arc-testnet',
-    nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 6 },
+    name   : 'Arc',
+    network: 'arc',
+    // Native interface (gas/msg.value) uses 18 decimals; the USDC ERC-20
+    // interface used for balances/transfers uses 6 — same asset, two views.
+    nativeCurrency: { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
     rpcUrls: {
       default: { http: [ARC_RPC] },
       public : { http: [ARC_RPC] },
     },
     blockExplorers: {
-      default: { name: 'ArcScan', url: ARC_EXPLORER },
+      default: { name: 'Arc Explorer', url: ARC_EXPLORER },
     },
-    testnet: true,
+    testnet: false,
   })
 }
 

@@ -1,9 +1,11 @@
 # SavingsVault Relayer — Setup & Connection Guide
 
+> For a project overview, the Render deployment steps, and the Arc mainnet migration checklist, see [`README.md`](./README.md). This guide covers local dev setup only.
+
 ## Architecture overview
 
 ```
-User spends USDC on Arc testnet
+User spends USDC on Arc
   → Arc node emits Transfer event
     → Relayer polls for the log (block-range getLogs, ~1s interval)
       → DB lookup: is this sender an active registered user? (< 0.1ms SQLite)
@@ -19,21 +21,23 @@ User spends USDC on Arc testnet
 
 - Node.js 20+
 - A wallet private key (for the relayer — a plain EOA, no account abstraction)
-- SavingsVault.sol deployed on Arc testnet
+- SavingsVault.sol deployed on Arc
 
 ---
 
-## Step 1 — Deploy the vault on Arc testnet
+## Step 1 — Deploy the vault
 
-In Remix, set environment to **Injected Provider (MetaMask)** and switch MetaMask to Arc Testnet:
+In Remix, set environment to **Injected Provider (MetaMask)** and switch MetaMask to Arc:
 
-| Field | Value |
-|---|---|
-| Network name | Arc Testnet |
-| RPC URL | https://rpc.testnet.arc.network |
-| Chain ID | 5042002 |
-| Currency | USDC |
-| Explorer | https://testnet.arcscan.app |
+| Field | Mainnet | Testnet (dry run) |
+|---|---|---|
+| Network name | Arc | Arc Testnet |
+| RPC URL | https://rpc.mainnet.arc.io | https://rpc.testnet.arc.network |
+| Chain ID | 5042 | 5042002 |
+| Currency | USDC (18 decimals) | USDC |
+| Explorer | https://explorer.arc.io | https://testnet.arcscan.app |
+
+This codebase defaults to **mainnet**. If you want to dry-run the full flow on testnet first (recommended before moving real funds), see [`README.md`](./README.md)'s testnet↔mainnet table and swap the values back.
 
 Deploy `SavingsVault.sol` with:
 - `_usdc` = `0x3600000000000000000000000000000000000000` (Arc system USDC)
@@ -60,9 +64,10 @@ Edit `.env`:
 RELAYER_PRIVATE_KEY=0x_your_private_key
 VAULT_ADDRESS=0x_your_deployed_vault_address
 USDC_ADDRESS=0x3600000000000000000000000000000000000000
-ARC_RPC_HTTP=https://rpc.testnet.arc.network
-ARC_RPC_WSS=wss://rpc.testnet.arc.network
+ARC_RPC_HTTP=https://rpc.mainnet.arc.io
 ```
+
+(No `ARC_RPC_WSS` — this app only polls over HTTP; see `src/utils/watchLogs.ts` for why.)
 
 ---
 
@@ -84,15 +89,15 @@ Relayer: 0xYourRelayerAddress
 
 **Copy this address** — you need it for two things:
 1. Pass it as `_relayer` when deploying the vault
-2. Fund it with testnet USDC for gas
+2. Fund it with USDC for gas
 
 ---
 
-## Step 4 — Fund the relayer with testnet USDC
+## Step 4 — Fund the relayer with USDC
 
-Go to https://faucet.circle.com → select **Arc Testnet** → paste your relayer address.
+**Mainnet:** transfer a small amount of real USDC to the relayer address on Arc (bridge in via CCTP, or send from an exchange that supports Arc withdrawals). Gas is cheap — a few dollars covers a very large number of deposits — but this is real money, so start small and confirm the flow works before topping up further.
 
-You get 1 USDC/day. On Arc testnet, gas costs ~0.000001 USDC per tx — 1 USDC covers thousands of deposits.
+**Testnet (dry run):** go to https://faucet.circle.com → select **Arc Testnet** → paste your relayer address. You get 1 USDC/day, and testnet gas costs ~0.000001 USDC per tx — 1 USDC covers thousands of deposits.
 
 ---
 
@@ -130,7 +135,7 @@ npm run build && npm start
 
 ## Step 8 — Test the full flow
 
-### On Remix (Arc testnet):
+### On Remix:
 
 1. **User configures vault:**
    ```
@@ -140,12 +145,15 @@ npm run build && npm start
 
 2. **User approves vault to spend USDC:**
    ```
-   MockUSDC.approve(vaultAddress, 1000_000000)  // 1000 USDC
+   USDC.approve(vaultAddress, 1000_000000)  // 1000 USDC
    ```
+   On testnet you can use a `MockUSDC` contract for this. On mainnet there's no mock —
+   call `approve`/`transfer` directly on the real USDC contract at `0x3600...0000`,
+   with a small real amount, since this is live money.
 
 3. **Simulate a spend (transfer USDC anywhere):**
    ```
-   MockUSDC.transfer(anyAddress, 100_000000)  // spend 100 USDC
+   USDC.transfer(anyAddress, 100_000000)  // spend 100 USDC
    ```
    → Relayer receives `Transfer` event
    → DB lookup: user is active @ 500bp
@@ -184,7 +192,7 @@ Watch gas balance — if the relayer runs out of USDC, transactions fail:
 
 ```bash
 # Check relayer USDC balance via Arc explorer
-https://testnet.arcscan.app/address/YOUR_RELAYER_ADDRESS
+https://explorer.arc.io/address/YOUR_RELAYER_ADDRESS
 ```
 
 Set up a balance alert: add a cron job that checks the balance and emails/Slacks when it drops below a threshold.
@@ -214,11 +222,12 @@ Prevents double-deposits if the WS reconnects and replays logs.
 
 ---
 
-## Upgrading to production RPC
+## Upgrading to a private RPC
 
-Replace the public endpoints in `.env` with a private endpoint from:
-- **QuickNode** — https://www.quicknode.com/docs/arc (HTTP + WSS, Arc testnet confirmed)
-- **dRPC** — https://drpc.org/chainlist/arc-testnet-rpc
-- **Blockdaemon** — listed in Arc's official node provider docs
+The public endpoint (`rpc.mainnet.arc.io`) rate-limits aggressively — this app is already built around that (see `src/utils/watchLogs.ts`), but a private endpoint gets you higher limits and an uptime SLA. Per [docs.arc.io](https://docs.arc.io/arc/references/rpc-endpoints), mainnet options include:
+- **Alchemy** — `https://arc-mainnet.g.alchemy.com/v2/YOUR_API_KEY`
+- **Blockdaemon** — `https://rpc.blockdaemon.mainnet.arc.io`
+- **dRPC** — `https://rpc.drpc.mainnet.arc.io`
+- **QuickNode** — `https://rpc.quicknode.mainnet.arc.io`
 
-Private endpoints have higher rate limits and guaranteed uptime SLAs.
+Just swap `ARC_RPC_HTTP` in `.env` — no code changes needed.

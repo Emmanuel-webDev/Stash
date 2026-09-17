@@ -61,8 +61,8 @@ async function switchToArc() {
         method: 'wallet_addEthereumChain',
         params: [{
           chainId          : chainHex,
-          chainName        : 'Arc Testnet',
-          nativeCurrency   : { name: 'USD Coin', symbol: 'USDC', decimals: 6 },
+          chainName        : 'Arc',
+          nativeCurrency   : { name: 'USD Coin', symbol: 'USDC', decimals: 18 },
           rpcUrls          : [ARC_RPC],
           blockExplorerUrls: [ARC_EXPLORER],
         }],

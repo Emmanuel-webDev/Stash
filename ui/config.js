@@ -2,12 +2,13 @@
 // config.js — App-wide constants
 // ═══════════════════════════════════════════════
 
-export const VAULT_ADDRESS = "0x85167aCDf3D91D00aE0df19aD02eDbb44e2278F0";  
+export const VAULT_ADDRESS = "0xad114a8B963F1AD5583a24d4013ce4bBbdA34275";
 export const USDC_ADDRESS   = '0x3600000000000000000000000000000000000000'
-export const ARC_CHAIN_ID   = 5042002
-export const ARC_RPC        = 'https://rpc.testnet.arc.network'
-export const ARC_EXPLORER   = 'https://testnet.arcscan.app'
-export const VAULT_DEPLOY_BLOCK = 54902280n;
+export const ARC_CHAIN_ID   = 5042
+// Circle's official endpoint (docs.arc.io). rpc.arc-scan.org also works as a fallback.
+export const ARC_RPC        = 'https://rpc.mainnet.arc.io'
+export const ARC_EXPLORER   = 'https://explorer.arc.io'
+export const VAULT_DEPLOY_BLOCK = 21343272n;
 
 export const VAULT_ABI = [
   { name: 'configure',        type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'basisPoints',  type: 'uint256' }], outputs: [] },

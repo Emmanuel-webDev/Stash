@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: savings-relayer
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: RELAYER_PRIVATE_KEY
+        sync: false
+      - key: VAULT_ADDRESS
+        sync: false
+      - key: USDC_ADDRESS
+        sync: false
+      - key: ARC_RPC_HTTP
+        sync: false
+      - key: ARC_RPC_WSS
+        sync: false
+      - key: VAULT_DEPLOY_BLOCK
+        sync: false

@@ -13,10 +13,15 @@
 
 import Database from 'better-sqlite3'
 import { resolve } from 'path'
+import { applySchema } from './schema.js'
 
 const db = new Database(resolve(process.cwd(), 'relayer.db'))
 db.pragma('journal_mode = WAL')
 db.pragma('synchronous  = NORMAL')
+
+// Ensures the schema exists even if `npm run db:migrate` was never run —
+// required on Render's free tier, where the disk is wiped on every redeploy.
+applySchema(db)
 
 // ── Compiled prepared statements (one-time cost at startup) ──────────────────
 const q = {

@@ -1,5 +1,5 @@
 /**
- * Arc's public testnet RPC doesn't reliably persist eth_newFilter state across
+ * Arc's public RPC doesn't reliably persist eth_newFilter state across
  * requests (likely load-balanced across backend nodes), which makes viem's
  * default watchContractEvent (filter + eth_getFilterChanges) fail with
  * "filter not found". This polls eth_getLogs over block ranges instead —
