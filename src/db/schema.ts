@@ -28,5 +28,22 @@ export function applySchema(db: Database.Database): void {
       savings_amount TEXT NOT NULL,
       processed_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- A deposit that reverted on-chain (most commonly: insufficient USDC
+    -- approval because the user wasn't around to top up). Retried on a timer
+    -- (see processor/retryMissed.ts) and surfaced to the user via /missed so
+    -- a spend that couldn't be saved yet is never just silently dropped.
+    CREATE TABLE IF NOT EXISTS failed_deposits (
+      log_id       TEXT PRIMARY KEY,    -- "{txHash}-{logIndex}"
+      user_address TEXT NOT NULL,
+      spend_amount TEXT NOT NULL,       -- bigint stored as string
+      attempts     INTEGER NOT NULL DEFAULT 1,
+      last_error   TEXT,
+      first_failed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_attempt_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_failed_deposits_user
+      ON failed_deposits(user_address);
   `)
 }

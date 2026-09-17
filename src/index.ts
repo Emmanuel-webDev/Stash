@@ -3,9 +3,12 @@ import { store } from './db/store.js'
 import { publicClient, relayerAccount } from './utils/clients.js'
 import { startVaultEventListeners } from './listeners/vaultEvents.js'
 import { startTransferListener } from './listeners/transferEvents.js'
+import { retryMissedDeposits } from './processor/retryMissed.js'
 import { startServer } from './server.js'
 import { log } from './utils/logger.js'
 import { config, arcChain } from './config.js'
+
+const RETRY_MISSED_INTERVAL_MS = 5 * 60_000 // 5 minutes
 
 async function main(): Promise<void> {
   log.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
@@ -43,6 +46,12 @@ async function main(): Promise<void> {
 
   // Start watching USDC transfers
   startTransferListener(publicClient)
+
+  // Catch up any deposits that failed earlier (typically insufficient
+  // approval) once the user tops up — see processor/retryMissed.ts
+  setInterval(() => {
+    retryMissedDeposits().catch((err) => log.error('retryMissedDeposits:', err))
+  }, RETRY_MISSED_INTERVAL_MS)
 
   log.ok('Relayer live — listening for events...')
   log.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')

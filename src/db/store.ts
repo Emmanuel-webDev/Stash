@@ -68,12 +68,35 @@ const q = {
       (log_id, user_address, spend_amount, savings_amount)
     VALUES (?, ?, ?, ?)
   `),
+
+  // Upsert on retry: bump attempts + last_error instead of duplicating rows
+  recordFailed: db.prepare(`
+    INSERT INTO failed_deposits (log_id, user_address, spend_amount, last_error)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(log_id) DO UPDATE SET
+      attempts        = attempts + 1,
+      last_error      = excluded.last_error,
+      last_attempt_at = datetime('now')
+  `),
+
+  resolveFailed: db.prepare(`
+    DELETE FROM failed_deposits WHERE log_id = ?
+  `),
+
+  getAllFailedDeposits: db.prepare(`
+    SELECT log_id, user_address, spend_amount FROM failed_deposits
+  `),
+
+  getFailedDepositsForUser: db.prepare(`
+    SELECT log_id, spend_amount FROM failed_deposits WHERE user_address = ?
+  `),
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export interface ActiveUser  { basis_points: number }
 export interface StoredUser  { address: string; basis_points: number }
+export interface FailedDeposit { log_id: string; user_address: string; spend_amount: string }
 
 export const store = {
   // Called when Configured() vault event fires
@@ -118,5 +141,32 @@ export const store = {
       spendAmount.toString(),
       savingsAmount.toString(),
     )
+  },
+
+  // A depositFor call reverted (most commonly: insufficient USDC approval).
+  // Recorded so it can be retried later and shown to the user in the meantime.
+  recordFailedDeposit(
+    txHash: string,
+    logIndex: number,
+    user: string,
+    spendAmount: bigint,
+    error: string,
+  ): void {
+    q.recordFailed.run(`${txHash}-${logIndex}`, user.toLowerCase(), spendAmount.toString(), error)
+  },
+
+  resolveFailedDeposit(txHash: string, logIndex: number): void {
+    q.resolveFailed.run(`${txHash}-${logIndex}`)
+  },
+
+  getAllFailedDeposits(): FailedDeposit[] {
+    return q.getAllFailedDeposits.all() as FailedDeposit[]
+  },
+
+  // Sums missed spend amounts for one user — used by GET /missed/:address
+  getMissedSummary(address: string): { count: number; totalSpendAmount: string } {
+    const rows = q.getFailedDepositsForUser.all(address.toLowerCase()) as { spend_amount: string }[]
+    const total = rows.reduce((acc, r) => acc + BigInt(r.spend_amount), 0n)
+    return { count: rows.length, totalSpendAmount: total.toString() }
   },
 }

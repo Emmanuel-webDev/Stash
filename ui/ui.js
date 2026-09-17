@@ -33,6 +33,11 @@ export const el = {
   modalIcon     : document.getElementById('modalIcon'),
   modalClose    : document.getElementById('modalClose'),
   toast         : document.getElementById('toast'),
+  approvalBanner    : document.getElementById('approvalBanner'),
+  approvalBannerText: document.getElementById('approvalBannerText'),
+  topUpBtn          : document.getElementById('topUpBtn'),
+  missedBanner      : document.getElementById('missedBanner'),
+  missedBannerText  : document.getElementById('missedBannerText'),
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -111,6 +116,27 @@ export function closeModal() {
 export function setStatus(message, state = 'inactive') {
   el.statusBar.dataset.state = state
   el.statusText.textContent  = message
+}
+
+// ── Approval banner ───────────────────────────────────────────────────────────
+/** Show/hide the "approval running low" banner. remainingFormatted is a USDC string. */
+export function setApprovalBanner(show, remainingFormatted) {
+  el.approvalBanner.hidden = !show
+  if (show) {
+    el.approvalBannerText.textContent =
+      `Approval running low (${remainingFormatted} USDC left) — top up to keep auto-saving.`
+  }
+}
+
+// ── Missed savings banner ─────────────────────────────────────────────────────
+/** Show/hide the "spends you missed" banner. totalFormatted is a USDC string. */
+export function setMissedBanner(show, count, totalFormatted) {
+  el.missedBanner.hidden = !show
+  if (show) {
+    const plural = count === 1 ? 'spend' : 'spends'
+    el.missedBannerText.textContent =
+      `${count} ${plural} (~${totalFormatted} USDC) couldn't be saved yet — usually because approval ran low while you were away. We'll catch these up automatically.`
+  }
 }
 
 // ── Slider & rate display ─────────────────────────────────────────────────────

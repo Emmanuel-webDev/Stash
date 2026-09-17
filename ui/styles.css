@@ -359,6 +359,34 @@ main {
   color: var(--ink-3);
 }
 
+/* ── Approval Banner ─────────────────────────── */
+.approval-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius);
+  background: var(--amber-dim);
+  color: var(--amber);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ── Missed Savings Banner ───────────────────── */
+/* Informational, not action-required (auto-retried) — blue, not amber */
+.missed-banner {
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius);
+  background: var(--blue-dim);
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .status-dot {
   width: 7px;
   height: 7px;

@@ -2,9 +2,9 @@
 // vault.js — Vault contract interactions
 // ═══════════════════════════════════════════════
 
-import { VAULT_ADDRESS, USDC_ADDRESS, VAULT_ABI, USDC_ABI, MAX_UINT256, VAULT_DEPLOY_BLOCK } from './config.js'
+import { VAULT_ADDRESS, USDC_ADDRESS, VAULT_ABI, USDC_ABI, APPROVAL_TOPUP_USDC, APPROVAL_LOW_THRESHOLD_USDC, VAULT_DEPLOY_BLOCK } from './config.js'
 import { getAccount, getPublicClient, getViem, sendTx } from './wallet.js'
-import { addFeedItem, setStatus, updateBalance, formatUSDC, el, showToast, openModal, updateModal, friendlyError } from './ui.js'
+import { addFeedItem, setStatus, updateBalance, formatUSDC, el, showToast, openModal, updateModal, friendlyError, setApprovalBanner, setMissedBanner } from './ui.js'
 
 // Arc RPC limit is 10,000 blocks per getLogs call — chunk to stay under it
 const CHUNK_SIZE = 9_000n
@@ -53,10 +53,48 @@ export async function loadUserState() {
 
     await loadRecentEvents()
     startEventWatcher()
+    if (active) await checkApprovalHealth()
+    await checkMissedSavings()
 
   } catch (err) {
     console.error('loadUserState:', err)
     setStatus('Could not load vault state.', 'inactive')
+  }
+}
+
+// ── Read: warn + offer a top-up once the USDC approval runs low ───────────────
+// A bounded approval (not unlimited) means it periodically needs refreshing —
+// this surfaces that instead of letting background deposits silently fail.
+export async function checkApprovalHealth() {
+  const account      = getAccount()
+  const publicClient = getPublicClient()
+
+  try {
+    const allowance = await publicClient.readContract({
+      address: USDC_ADDRESS, abi: USDC_ABI,
+      functionName: 'allowance', args: [account, VAULT_ADDRESS],
+    })
+    setApprovalBanner(allowance < APPROVAL_LOW_THRESHOLD_USDC, formatUSDC(allowance))
+  } catch (err) {
+    console.error('checkApprovalHealth:', err)
+  }
+}
+
+// ── Read: surface spends that couldn't be saved yet ────────────────────────────
+// A depositFor call can fail (most commonly: approval ran out while the user
+// wasn't around to top up). The relayer retries these automatically on a
+// timer once they're resolvable — this just makes the gap visible in the
+// meantime instead of a spend silently vanishing from the savings history.
+export async function checkMissedSavings() {
+  const account = getAccount()
+
+  try {
+    const res = await fetch(`/missed/${account}`)
+    if (!res.ok) return
+    const { count, totalSpendAmount } = await res.json()
+    setMissedBanner(count > 0, count, formatUSDC(BigInt(totalSpendAmount)))
+  } catch (err) {
+    console.error('checkMissedSavings:', err)
   }
 }
 
@@ -175,6 +213,11 @@ function startEventWatcher() {
 
         showToast(`Saved ${formatUSDC(l.args.amount)} USDC from your spend ✓`)
       }
+      // A deposit just consumed some of the bounded approval — re-check.
+      // Also worth re-checking missed savings: this Deposited event may BE
+      // a retried catch-up deposit succeeding.
+      checkApprovalHealth()
+      checkMissedSavings()
     },
   })
 }
@@ -197,11 +240,11 @@ export async function configure(basisPoints) {
       functionName: 'allowance', args: [account, VAULT_ADDRESS],
     })
 
-    if (allowance < MAX_UINT256 / 2n) {
-      updateModal('Approving USDC', 'First, approve the vault to spend your USDC.')
+    if (allowance < APPROVAL_LOW_THRESHOLD_USDC) {
+      updateModal('Approving USDC', `First, approve the vault to save up to ${formatUSDC(APPROVAL_TOPUP_USDC)} USDC on your behalf.`)
       const approveTx = await sendTx({
         to  : USDC_ADDRESS,
-        data: viem.encodeFunctionData({ abi: USDC_ABI, functionName: 'approve', args: [VAULT_ADDRESS, MAX_UINT256] }),
+        data: viem.encodeFunctionData({ abi: USDC_ABI, functionName: 'approve', args: [VAULT_ADDRESS, APPROVAL_TOPUP_USDC] }),
       })
       await publicClient.waitForTransactionReceipt({ hash: approveTx })
       showToast('USDC approved ✓')
@@ -226,9 +269,32 @@ export async function configure(basisPoints) {
     addFeedItem({ title: 'Rate Set', meta: `${pct}% · Just now`, type: 'config' })
     updateModal('Done!', `Savings active at ${pct}%.`, tx)
     showToast(`Savings activated at ${pct}% ✓`)
+    await checkApprovalHealth()
 
   } catch (err) {
     updateModal('Transaction failed', friendlyError(err), '', 'error')
+  }
+}
+
+// ── Write: top up the USDC approval once it's running low ─────────────────────
+export async function topUpApproval() {
+  const publicClient = getPublicClient()
+  const viem         = getViem()
+
+  openModal('Topping up approval', `Approving ${formatUSDC(APPROVAL_TOPUP_USDC)} USDC. Check MetaMask.`)
+  try {
+    const tx = await sendTx({
+      to  : USDC_ADDRESS,
+      data: viem.encodeFunctionData({ abi: USDC_ABI, functionName: 'approve', args: [VAULT_ADDRESS, APPROVAL_TOPUP_USDC] }),
+    })
+    await publicClient.waitForTransactionReceipt({ hash: tx })
+
+    setApprovalBanner(false)
+    updateModal('Topped up ✓', `Approved ${formatUSDC(APPROVAL_TOPUP_USDC)} USDC. Any spends missed while approval was low will be caught up automatically within a few minutes.`, tx)
+    showToast('Approval topped up ✓')
+
+  } catch (err) {
+    updateModal('Failed', friendlyError(err), '', 'error')
   }
 }
 

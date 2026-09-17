@@ -4,8 +4,8 @@
 // ═══════════════════════════════════════════════
 
 import { el, showDashboard, showLanding, updateRateUI, closeModal } from './ui.js'
-import { connectWallet, disconnectWallet } from './wallet.js'
-import { loadUserState, stopEventWatcher, configure, pauseListening, resumeListening, withdraw } from './vault.js'
+import { connectWallet, disconnectWallet, getPublicClient } from './wallet.js'
+import { loadUserState, stopEventWatcher, configure, pauseListening, resumeListening, withdraw, topUpApproval } from './vault.js'
 import { ARC_CHAIN_ID } from './config.js'
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -51,6 +51,9 @@ el.resumeBtn.addEventListener('click', resumeListening)
 // ── Withdraw ──────────────────────────────────────────────────────────────────
 el.withdrawBtn.addEventListener('click', withdraw)
 
+// ── Approval top-up ───────────────────────────────────────────────────────────
+el.topUpBtn.addEventListener('click', topUpApproval)
+
 // ── Modal close ───────────────────────────────────────────────────────────────
 el.modalClose.addEventListener('click', closeModal)
 
@@ -61,6 +64,11 @@ el.modal.addEventListener('click', e => {
 // ── MetaMask account/chain events ─────────────────────────────────────────────
 if (window.ethereum) {
   window.ethereum.on('accountsChanged', async accounts => {
+    // Ignore events fired before the user has actually clicked Connect —
+    // some wallets emit this on page load. Without this guard, loadUserState()
+    // crashes reading readContract off a null publicClient.
+    if (!getPublicClient()) return
+
     if (accounts.length === 0) {
       stopEventWatcher()
       disconnectWallet()

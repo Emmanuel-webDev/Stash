@@ -37,6 +37,21 @@ function healthPayload() {
   }
 }
 
+const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/
+
+/** GET /missed/0xAddress — spends that couldn't be saved yet (see failed_deposits) */
+function handleMissed(url: string): { status: number; body: unknown } | null {
+  const match = url.match(/^\/missed\/(.+)$/)
+  if (!match) return null
+
+  const address = match[1]
+  if (!ADDRESS_RE.test(address)) {
+    return { status: 400, body: { error: 'invalid address' } }
+  }
+
+  return { status: 200, body: store.getMissedSummary(address) }
+}
+
 export function startServer(): void {
   const port = Number(process.env.PORT ?? 3000)
 
@@ -46,6 +61,13 @@ export function startServer(): void {
     if (url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(healthPayload()))
+      return
+    }
+
+    const missed = handleMissed(url)
+    if (missed) {
+      res.writeHead(missed.status, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(missed.body))
       return
     }
 

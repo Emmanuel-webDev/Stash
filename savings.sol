@@ -14,6 +14,10 @@ pragma solidity ^0.8.24;
  *  - Reentrancy guard on all state-mutating external calls
  *  - CEI (Checks-Effects-Interactions) on withdraw
  *  - Relayer whitelist enforced on depositFor
+ *  - Savings amount computed ON-CHAIN from the user's own configured rate —
+ *    the relayer reports a spend amount, never a pre-computed savings figure,
+ *    so a compromised/malicious relayer cannot claim an arbitrary deposit
+ *    unrelated to the user's actual basis-point rate
  *  - Per-user pause flag — relayer rejects deposits for paused users
  *  - Basis-point bounds enforced on configure (100–2000)
  *  - Pull-over-push withdrawal pattern (user initiates, no push)
@@ -245,14 +249,20 @@ contract SavingsVault {
 
     /**
      * @notice Route a savings amount into a user's vault.
-     * @param  user    The wallet being monitored.
-     * @param  amount  Raw USDC amount (already computed as spendAmount × basisPoints / 10000).
+     * @param  user         The wallet being monitored.
+     * @param  spendAmount  Raw USDC amount the relayer observed the user spend.
+     *
+     * @dev The savings amount is computed HERE, on-chain, from the user's own
+     *      configured basisPoints — never trusted as a pre-computed figure
+     *      from the relayer. The relayer's only power is to report that a
+     *      spend of a given size happened; it cannot claim an arbitrary
+     *      deposit amount disconnected from the user's actual rate.
      *
      * Security:
      *  - Only callable by the whitelisted relayer.
      *  - Reverts if the user has not configured a vault.
      *  - Reverts if the user has paused listening.
-     *  - Reverts if amount is zero.
+     *  - Reverts if spendAmount, or the computed savings amount, is zero.
      *  - nonReentrant: the USDC transferFrom cannot re-enter.
      *  - CEI: state updated BEFORE external call (balance credited first,
      *    then token pulled — safe because we track internal balances
@@ -260,14 +270,17 @@ contract SavingsVault {
      */
     function depositFor(
         address user,
-        uint256 amount
+        uint256 spendAmount
     ) external nonReentrant whenNotPaused onlyRelayer {
         require(user != address(0), "Vault: zero user");
-        require(amount > 0, "Vault: zero amount");
+        require(spendAmount > 0, "Vault: zero amount");
 
         UserConfig storage cfg = _configs[user];
         require(cfg.active, "Vault: user not configured");
         require(!cfg.listeningPaused, "Vault: user paused listening");
+
+        uint256 amount = (spendAmount * cfg.basisPoints) / BASIS_DIVISOR;
+        require(amount > 0, "Vault: computed amount is zero");
 
         // ── Effects ──────────────────────────────────────────
         _balances[user] += amount;

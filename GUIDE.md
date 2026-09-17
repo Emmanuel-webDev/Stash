@@ -10,7 +10,7 @@ User spends USDC on Arc
     → Relayer polls for the log (block-range getLogs, ~1s interval)
       → DB lookup: is this sender an active registered user? (< 0.1ms SQLite)
         → Compute savings = spendAmount × basisPoints / 10000
-          → Relayer sends depositFor(user, savings) directly from its own EOA
+          → Relayer sends depositFor(user, spendAmount) — vault computes savings on-chain
             → Relayer pays gas in USDC (Arc's native gas token)
               → Vault credits the user's balance
 ```
@@ -145,11 +145,15 @@ npm run build && npm start
 
 2. **User approves vault to spend USDC:**
    ```
-   USDC.approve(vaultAddress, 1000_000000)  // 1000 USDC
+   USDC.approve(vaultAddress, 50_000000)  // 50 USDC — the app's bounded approval, not unlimited
    ```
-   On testnet you can use a `MockUSDC` contract for this. On mainnet there's no mock —
-   call `approve`/`transfer` directly on the real USDC contract at `0x3600...0000`,
-   with a small real amount, since this is live money.
+   The production UI approves a bounded amount (50 USDC, see `ui/config.js`'s
+   `APPROVAL_TOPUP_USDC`) rather than `MAX_UINT256`, and re-prompts for a top-up
+   once it runs low — this caps how much a compromised relayer or vault bug
+   could ever pull in one shot. On testnet you can use a `MockUSDC` contract for
+   this. On mainnet there's no mock — call `approve`/`transfer` directly on the
+   real USDC contract at `0x3600...0000`, with a small real amount, since this
+   is live money.
 
 3. **Simulate a spend (transfer USDC anywhere):**
    ```
@@ -157,8 +161,8 @@ npm run build && npm start
    ```
    → Relayer receives `Transfer` event
    → DB lookup: user is active @ 500bp
-   → Computes savings: 100 × 500 / 10000 = 5 USDC
-   → Relayer sends `depositFor` directly → vault credits 5 USDC to user
+   → Relayer calls `depositFor(user, 100_000000)` — passes the raw spend amount, not a pre-computed savings figure
+   → **Vault itself** computes savings on-chain: 100 × 500 / 10000 = 5 USDC, and credits it
 
 4. **Verify:**
    ```

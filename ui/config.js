@@ -2,13 +2,16 @@
 // config.js — App-wide constants
 // ═══════════════════════════════════════════════
 
-export const VAULT_ADDRESS = "0xad114a8B963F1AD5583a24d4013ce4bBbdA34275";
+export const VAULT_ADDRESS = "0x1AFE5a4402DFe72e4a7Ab3016952F71DcC119C79";
 export const USDC_ADDRESS   = '0x3600000000000000000000000000000000000000'
 export const ARC_CHAIN_ID   = 5042
-// Circle's official endpoint (docs.arc.io). rpc.arc-scan.org also works as a fallback.
+// Circle's official endpoint (docs.arc.io).
 export const ARC_RPC        = 'https://rpc.mainnet.arc.io'
+// Third-party fallback — automatically used if the primary throttles/drops a
+// request (Arc's public mainnet RPC rate-limits aggressively; see chain.js).
+export const ARC_RPC_FALLBACK = 'https://rpc.arc-scan.org'
 export const ARC_EXPLORER   = 'https://explorer.arc.io'
-export const VAULT_DEPLOY_BLOCK = 21343272n;
+export const VAULT_DEPLOY_BLOCK = 21350919n;
 
 export const VAULT_ABI = [
   { name: 'configure',        type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'basisPoints',  type: 'uint256' }], outputs: [] },
@@ -34,4 +37,9 @@ export const USDC_ABI = [
   { name: 'allowance', type: 'function', stateMutability: 'view',       inputs: [{ name: 'owner',   type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ type: 'uint256' }] },
 ]
 
-export const MAX_UINT256 = 115792089237316195423570985008687907853269984665640564039457584007913129639935n
+// Bounded approval instead of unlimited (MAX_UINT256). Caps how much a
+// compromised relayer key or vault bug could ever pull in one shot — the UI
+// silently re-prompts for a fresh approval once the remaining allowance
+// drops below the threshold, so this never asks more often than necessary.
+export const APPROVAL_TOPUP_USDC         = 500_000_000n // 500 USDC (6-decimal ERC-20 units)
+export const APPROVAL_LOW_THRESHOLD_USDC = 50_000_000n  // re-prompt once allowance drops below 50 USDC
