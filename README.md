@@ -5,7 +5,8 @@ Stash watches your wallet and automatically routes a slice of every USDC spend i
 - **Live app:** `TODO — Render URL after deploy`
 - **Vault contract (Arc mainnet):** [`0xad114a8B963F1AD5583a24d4013ce4bBbdA34275`](https://explorer.arc.io/address/0xad114a8B963F1AD5583a24d4013ce4bBbdA34275)
 - **Vault contract (Arc testnet, prior dev deployment):** [`0x85167aCDf3D91D00aE0df19aD02eDbb44e2278F0`](https://testnet.arcscan.app/address/0x85167aCDf3D91D00aE0df19aD02eDbb44e2278F0)
-- **Builder:** `TODO — GitHub / X / Farcaster handle`
+- **Builder:** [Emmanuel-webDev](https://github.com/Emmanuel-webDev)
+- **Repo:** [github.com/Emmanuel-webDev/Stash](https://github.com/Emmanuel-webDev/Stash)
 
 ---
 

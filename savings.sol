@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @title SavingsVault
  * @author Nze
- * @notice Non-custodial automated savings vault on Base (USDC).
+ * @notice Non-custodial automated savings vault on Arc (USDC).
  *         Users configure a basis-point savings rate; a whitelisted relayer
  *         calls `depositFor` whenever a qualifying spend event is detected.
  *         Users can pause/resume relayer monitoring at any time without
