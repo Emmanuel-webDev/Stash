@@ -2,7 +2,7 @@
 
 Stash watches your wallet and automatically routes a slice of every USDC spend into a non-custodial on-chain vault. Set a rate once, spend normally — Stash saves the rest for you.
 
-- **Live app:** `TODO — Render URL after deploy`
+- **Live app:** [savings-relayer.onrender.com](https://savings-relayer.onrender.com) ([health check](https://savings-relayer.onrender.com/health))
 - **Vault contract (Arc mainnet):** [`0xad114a8B963F1AD5583a24d4013ce4bBbdA34275`](https://explorer.arc.io/address/0xad114a8B963F1AD5583a24d4013ce4bBbdA34275)
 - **Vault contract (Arc testnet, prior dev deployment):** [`0x85167aCDf3D91D00aE0df19aD02eDbb44e2278F0`](https://testnet.arcscan.app/address/0x85167aCDf3D91D00aE0df19aD02eDbb44e2278F0)
 - **Builder:** [Emmanuel-webDev](https://github.com/Emmanuel-webDev)
@@ -123,7 +123,7 @@ Arc mainnet only launched this week, so its RPC/explorer ecosystem is still youn
 
 ## Arc Microgrants submission checklist
 
-- [x] Live deployment on Arc **mainnet** — vault contract deployed and confirmed working (fill in the Render app URL above once deployed)
-- [ ] Public repo link (fill in above once pushed)
+- [x] Live deployment on Arc **mainnet** — [savings-relayer.onrender.com](https://savings-relayer.onrender.com), confirmed live and healthy
+- [x] Public repo link — [github.com/Emmanuel-webDev/Stash](https://github.com/Emmanuel-webDev/Stash)
 - [x] Project description + what it uses Arc for — this README
-- [ ] Public builder profile (fill in above)
+- [x] Public builder profile — [github.com/Emmanuel-webDev](https://github.com/Emmanuel-webDev)
