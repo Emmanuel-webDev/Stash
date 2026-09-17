@@ -18,9 +18,15 @@ Stash watches your wallet and automatically routes a slice of every USDC spend i
 3. The relayer reports the spend to the vault; the **vault itself** computes `spend × your rate` on-chain and deposits that amount into your personal balance.
 4. Withdraw anytime. You always control the funds; the relayer can only *add* to your balance, never move it out — and it can't fabricate a deposit amount disconnected from your actual configured rate.
 
+## Screenshots
+
+| Landing | Dashboard | Activity feed |
+|---|---|---|
+| ![Landing page](./screenshots/landing.png) | ![Connected dashboard](./screenshots/dashboard.png) | ![Savings rate + recent activity](./screenshots/activity-feed.png) |
+
 ## What it uses Arc for
 
-Arc is USDC-native: USDC *is* the gas token, so a relayer can pay for transactions in the exact same asset it's saving on your behalf — no separate gas token to bridge or hold.
+[Arc](https://www.arc.io) is Circle's own EVM-compatible Layer-1, purpose-built for stablecoin finance — USDC *is* the network's native gas token, not a bridged or wrapped asset bolted on afterward. That's the specific thing this app leans on: a relayer can pay for transactions in the exact same asset it's saving on your behalf, so "automated savings" doesn't need a second token just to keep the lights on.
 
 - **Settlement:** `SavingsVault.sol` is deployed on Arc; every deposit/withdraw is a real Arc transaction.
 - **Detection:** the relayer polls Arc's system emitter (`0xfff...ffe`) for `Transfer` events to catch outbound USDC spends in real time, no indexer required.
